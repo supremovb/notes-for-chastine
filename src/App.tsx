@@ -279,6 +279,7 @@ type TutorialPosition = {
   arrowTop: number
   cardLeft: number
   cardTop: number
+  isSmallScreen: boolean
 }
 
 const shouldUseDemoNotes = !isSupabaseConfigured()
@@ -679,8 +680,9 @@ function App() {
       return
     }
 
+    const step = tutorialSteps[tutorialStep]
+
     const updateTutorialPosition = () => {
-      const step = tutorialSteps[tutorialStep]
       const target = document.querySelector(`[data-tour="${step.target}"]`)
 
       if (!(target instanceof HTMLElement)) {
@@ -690,12 +692,6 @@ function App() {
 
       target.classList.add('tutorial-highlight')
       const isSmallScreen = window.innerWidth <= 720
-      target.scrollIntoView({
-        behavior: 'smooth',
-        block: isSmallScreen ? 'end' : 'center',
-        inline: 'center',
-      })
-
       const rect = target.getBoundingClientRect()
       const cardWidth = Math.min(410, window.innerWidth - 28)
       const cardHeight = 250
@@ -731,15 +727,39 @@ function App() {
         arrowTop: rect.top + rect.height / 2,
         cardLeft,
         cardTop,
+        isSmallScreen,
       })
     }
 
-    const timer = window.setTimeout(updateTutorialPosition, 320)
+    let positionTimer: number | undefined
+
+    const scrollToTutorialTarget = () => {
+      const target = document.querySelector(`[data-tour="${step.target}"]`)
+
+      if (!(target instanceof HTMLElement)) {
+        setTutorialPosition(null)
+        return
+      }
+
+      target.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'center',
+      })
+
+      updateTutorialPosition()
+      positionTimer = window.setTimeout(updateTutorialPosition, window.innerWidth <= 720 ? 520 : 280)
+    }
+
+    const timer = window.setTimeout(scrollToTutorialTarget, 180)
     window.addEventListener('resize', updateTutorialPosition)
     window.addEventListener('scroll', updateTutorialPosition, true)
 
     return () => {
       window.clearTimeout(timer)
+      if (positionTimer) {
+        window.clearTimeout(positionTimer)
+      }
       window.removeEventListener('resize', updateTutorialPosition)
       window.removeEventListener('scroll', updateTutorialPosition, true)
       document.querySelectorAll('[data-tour].tutorial-highlight').forEach((element) => {
@@ -2912,7 +2932,7 @@ function App() {
           <section
             className="tutorial-card"
             style={
-              tutorialPosition
+              tutorialPosition && !tutorialPosition.isSmallScreen
                 ? {
                     left: tutorialPosition.cardLeft,
                     top: tutorialPosition.cardTop,

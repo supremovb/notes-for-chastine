@@ -1787,7 +1787,7 @@ textarea:focus {
   position: fixed;
   left: 18px;
   top: 18px;
-  z-index: 94;
+  z-index: 120;
   display: grid;
   width: min(410px, calc(100vw - 28px));
   max-height: calc(100svh - 28px);
@@ -2218,10 +2218,12 @@ textarea:focus {
   }
 
   .tutorial-card {
+    position: fixed !important;
     right: 14px;
     bottom: auto;
     left: 14px !important;
     top: calc(env(safe-area-inset-top, 0px) + 12px) !important;
+    z-index: 160;
     width: auto;
     max-height: min(42svh, 330px);
     padding: 14px;
