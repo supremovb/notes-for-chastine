@@ -688,7 +688,12 @@ function App() {
       }
 
       target.classList.add('tutorial-highlight')
-      target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+      const isSmallScreen = window.innerWidth <= 720
+      target.scrollIntoView({
+        behavior: 'smooth',
+        block: isSmallScreen ? 'end' : 'center',
+        inline: 'center',
+      })
 
       const rect = target.getBoundingClientRect()
       const cardWidth = Math.min(410, window.innerWidth - 28)
@@ -700,6 +705,11 @@ function App() {
       let cardLeft = Math.max(14, Math.min(maxLeft, centeredLeft))
       let cardTop = Math.max(14, Math.min(maxTop, rect.bottom + gap))
 
+      if (isSmallScreen) {
+        cardLeft = 14
+        cardTop = 12
+      }
+
       if (step.placement === 'right') {
         cardLeft = Math.max(14, Math.min(maxLeft, rect.right + gap))
         cardTop = Math.max(14, Math.min(maxTop, rect.top + rect.height / 2 - cardHeight / 2))
@@ -708,6 +718,11 @@ function App() {
       if (step.placement === 'left') {
         cardLeft = Math.max(14, Math.min(maxLeft, rect.left - cardWidth - gap))
         cardTop = Math.max(14, Math.min(maxTop, rect.top + rect.height / 2 - cardHeight / 2))
+      }
+
+      if (isSmallScreen) {
+        cardLeft = 14
+        cardTop = 12
       }
 
       setTutorialPosition({

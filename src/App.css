@@ -1746,13 +1746,13 @@ textarea:focus {
 .tutorial-layer {
   position: fixed;
   inset: 0;
-  z-index: 45;
   pointer-events: none;
 }
 
 .tutorial-scrim {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: 70;
   background: rgba(21, 20, 19, 0.42);
   backdrop-filter: blur(4px);
   pointer-events: auto;
@@ -1760,8 +1760,9 @@ textarea:focus {
 }
 
 .tutorial-arrow {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: 92;
   overflow: visible;
   pointer-events: none;
 }
@@ -1786,9 +1787,11 @@ textarea:focus {
   position: fixed;
   left: 18px;
   top: 18px;
-  z-index: 46;
+  z-index: 94;
   display: grid;
   width: min(410px, calc(100vw - 28px));
+  max-height: calc(100svh - 28px);
+  overflow: auto;
   gap: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1835,7 +1838,7 @@ textarea:focus {
 
 .tutorial-highlight {
   position: relative;
-  z-index: 46;
+  z-index: 82;
   animation: tutorial-pulse 1200ms ease-in-out infinite;
   outline: 3px solid rgba(241, 193, 177, 0.72);
   outline-offset: 6px;
@@ -2216,10 +2219,20 @@ textarea:focus {
 
   .tutorial-card {
     right: 14px;
-    bottom: 14px;
+    bottom: auto;
     left: 14px !important;
-    top: auto !important;
+    top: calc(env(safe-area-inset-top, 0px) + 12px) !important;
     width: auto;
+    max-height: min(42svh, 330px);
+    padding: 14px;
+  }
+
+  .tutorial-card .reader-actions {
+    margin-bottom: 0;
+  }
+
+  .tutorial-arrow {
+    display: none;
   }
 }
 
