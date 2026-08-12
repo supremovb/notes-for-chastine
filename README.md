@@ -103,7 +103,7 @@ VITE_SUPABASE_URL
 VITE_SUPABASE_ANON_KEY
 ```
 
-Then push to `main`. GitHub Actions will build and deploy the site.
+Then push to `main`. GitHub Actions will build and deploy the site through GitHub Pages.
 
 ## Scripts
 
