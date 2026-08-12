@@ -496,6 +496,7 @@ function App() {
   const [unlockedNotes, setUnlockedNotes] = useState<Record<string, boolean>>({})
   const [unlockedNoteKeys, setUnlockedNoteKeys] = useState<Record<string, string>>({})
   const [legacyDecryptedBodies, setLegacyDecryptedBodies] = useState<Record<string, string>>({})
+  const [legacyOriginalKeys, setLegacyOriginalKeys] = useState<Record<string, string>>({})
   const [notePasscodes, setNotePasscodes] = useState<Record<string, string>>({})
   const [tutorialStep, setTutorialStep] = useState<number | null>(null)
   const [tutorialPosition, setTutorialPosition] = useState<TutorialPosition | null>(null)
@@ -1241,6 +1242,55 @@ function App() {
       return nextKeys
     })
     showToast('Private note locked.')
+  }
+
+  async function removeLegacyOriginalKey(note: Note, event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault()
+
+    if (isNoteLocked(note)) {
+      showToast('Unlock this note first.')
+      return
+    }
+
+    try {
+      const originalKey = legacyOriginalKeys[note.id]?.trim()
+      const readableBody =
+        legacyDecryptedBodies[note.id] ||
+        (originalKey ? await decryptText(note.body, originalKey) : '')
+
+      if (!readableBody) {
+        showToast('Enter the old original key once to remove it.')
+        return
+      }
+
+      const updatedNote = await updateNote(
+        note.id,
+        toNoteInput(note, {
+          body: readableBody,
+          is_encrypted: false,
+        }),
+      )
+
+      setNotes((currentNotes) =>
+        currentNotes.map((currentNote) =>
+          currentNote.id === note.id ? updatedNote : currentNote,
+        ),
+      )
+      setSelectedNote((currentNote) => (currentNote?.id === note.id ? updatedNote : currentNote))
+      setLegacyDecryptedBodies((currentBodies) => {
+        const nextBodies = { ...currentBodies }
+        delete nextBodies[note.id]
+        return nextBodies
+      })
+      setLegacyOriginalKeys((currentKeys) => {
+        const nextKeys = { ...currentKeys }
+        delete nextKeys[note.id]
+        return nextKeys
+      })
+      showToast('Original key removed. This note now uses only the note passcode.')
+    } catch {
+      showToast('That original key did not work for this note.')
+    }
   }
 
   function editNote(note: Note) {
@@ -2566,6 +2616,41 @@ function App() {
                   {selectedNote.is_archived ? 'Restore' : 'Archive'}
                 </button>
               </div>
+              {!isNoteLocked(selectedNote) && isEncryptedNote(selectedNote) && (
+                <form
+                  className="note-unlock-panel legacy-key-panel"
+                  onSubmit={(event) => void removeLegacyOriginalKey(selectedNote, event)}
+                >
+                  <span className="icon-box">
+                    <Unlock aria-hidden="true" size={18} />
+                  </span>
+                  <div>
+                    <h3>Remove old original key</h3>
+                    <p>
+                      {legacyDecryptedBodies[selectedNote.id]
+                        ? 'This note can be converted now. After this, it will use only the note lock passcode.'
+                        : "This note was saved with the older two-key setup. Enter the old original key once, then it will use only this note's lock passcode."}
+                    </p>
+                  </div>
+                  {!legacyDecryptedBodies[selectedNote.id] && (
+                    <input
+                      onChange={(event) =>
+                        setLegacyOriginalKeys({
+                          ...legacyOriginalKeys,
+                          [selectedNote.id]: event.target.value,
+                        })
+                      }
+                      placeholder="Old original key"
+                      type="password"
+                      value={legacyOriginalKeys[selectedNote.id] ?? ''}
+                    />
+                  )}
+                  <button type="submit">
+                    <Unlock aria-hidden="true" size={17} />
+                    Remove original key
+                  </button>
+                </form>
+              )}
               {!isNoteLocked(selectedNote) && (
               <div className="reaction-row" aria-label="Soft reactions">
                 {softReactions.map((reaction) => (
