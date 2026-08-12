@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Notes for Chastine">
+  <defs>
+    <linearGradient id="bg" x1="10" x2="54" y1="8" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2f2924"/>
+      <stop offset="1" stop-color="#171412"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="19" x2="45" y1="15" y2="49" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fffaf1"/>
+      <stop offset="1" stop-color="#efe4d5"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="18" fill="url(#bg)"/>
+  <rect x="9" y="9" width="46" height="46" rx="14" fill="none" stroke="#f1c1b1" stroke-opacity=".22"/>
+  <path d="M43 16H25c-3.3 0-6 2.7-6 6v25c0 .6.7.9 1.1.5l3.7-3.3c.7-.6 1.5-.9 2.4-.9H43c3.3 0 6-2.7 6-6V22c0-3.3-2.7-6-6-6Z" fill="url(#paper)"/>
+  <path d="M39.5 25.4a10 10 0 1 0 0 13.2" fill="none" stroke="#2b685c" stroke-linecap="round" stroke-width="6.2"/>
+  <path d="M37.6 31.1c1.6-1.8 4.3-1.8 5.8 0 1.7 1.9 1.5 4.6-.4 6.2l-2.5 2.2-2.5-2.2c-1.9-1.6-2.1-4.3-.4-6.2Z" fill="#c95347"/>
+</svg>
