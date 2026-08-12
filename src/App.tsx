@@ -373,21 +373,6 @@ async function getEncryptionKey(passphrase: string, salt: Uint8Array, usage: Key
   )
 }
 
-async function encryptText(text: string, passphrase: string) {
-  const salt = crypto.getRandomValues(new Uint8Array(16))
-  const iv = crypto.getRandomValues(new Uint8Array(12))
-  const key = await getEncryptionKey(passphrase, salt, ['encrypt'])
-  const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: toArrayBuffer(iv) },
-    key,
-    new TextEncoder().encode(text),
-  )
-
-  return `${encryptedPrefix}${bytesToBase64(salt)}:${bytesToBase64(iv)}:${bytesToBase64(
-    new Uint8Array(encrypted),
-  )}`
-}
-
 async function decryptText(payload: string, passphrase: string) {
   const [, , saltBase64, ivBase64, encryptedBase64] = payload.split(':')
 
@@ -508,9 +493,9 @@ function App() {
   const [relationshipWeather, setRelationshipWeather] = useState(
     () => localStorage.getItem(weatherStorageKey) ?? 'Quiet',
   )
-  const [encryptionPassphrase, setEncryptionPassphrase] = useState('')
-  const [decryptedBodies, setDecryptedBodies] = useState<Record<string, string>>({})
   const [unlockedNotes, setUnlockedNotes] = useState<Record<string, boolean>>({})
+  const [unlockedNoteKeys, setUnlockedNoteKeys] = useState<Record<string, string>>({})
+  const [legacyDecryptedBodies, setLegacyDecryptedBodies] = useState<Record<string, string>>({})
   const [notePasscodes, setNotePasscodes] = useState<Record<string, string>>({})
   const [tutorialStep, setTutorialStep] = useState<number | null>(null)
   const [tutorialPosition, setTutorialPosition] = useState<TutorialPosition | null>(null)
@@ -598,44 +583,6 @@ function App() {
   }, [relationshipWeather])
 
   useEffect(() => {
-    if (!encryptionPassphrase.trim()) {
-      setDecryptedBodies({})
-      return
-    }
-
-    let isMounted = true
-
-    Promise.all(
-      notes
-        .filter((note) => isEncryptedNote(note))
-        .map(async (note) => {
-          try {
-            return [note.id, await decryptText(note.body, encryptionPassphrase)] as const
-          } catch {
-            return [note.id, ''] as const
-          }
-        }),
-    ).then((entries) => {
-      if (!isMounted) {
-        return
-      }
-
-      setDecryptedBodies(
-        entries.reduce<Record<string, string>>((nextBodies, [id, body]) => {
-          if (body) {
-            nextBodies[id] = body
-          }
-          return nextBodies
-        }, {}),
-      )
-    })
-
-    return () => {
-      isMounted = false
-    }
-  }, [encryptionPassphrase, notes])
-
-  useEffect(() => {
     document.body.classList.toggle(
       'modal-open',
       Boolean(selectedNote || pendingDeleteNote || pendingDiscardAction || playbackIndex !== null || lightboxImage),
@@ -646,6 +593,40 @@ function App() {
       document.body.classList.remove('modal-open')
     }
   }, [lightboxImage, pendingDeleteNote, pendingDiscardAction, playbackIndex, selectedNote])
+
+  useEffect(() => {
+    let isMounted = true
+
+    Promise.all(
+      notes
+        .filter((note) => isEncryptedNote(note) && unlockedNoteKeys[note.id])
+        .map(async (note) => {
+          try {
+            return [note.id, await decryptText(note.body, unlockedNoteKeys[note.id])] as const
+          } catch {
+            return [note.id, ''] as const
+          }
+        }),
+    ).then((entries) => {
+      if (!isMounted) {
+        return
+      }
+
+      setLegacyDecryptedBodies((currentBodies) => ({
+        ...currentBodies,
+        ...entries.reduce<Record<string, string>>((nextBodies, [id, body]) => {
+          if (body) {
+            nextBodies[id] = body
+          }
+          return nextBodies
+        }, {}),
+      }))
+    })
+
+    return () => {
+      isMounted = false
+    }
+  }, [notes, unlockedNoteKeys])
 
   useEffect(() => {
     function warnBeforeLeave(event: BeforeUnloadEvent) {
@@ -765,8 +746,8 @@ function App() {
       return note.body
     }
 
-    return decryptedBodies[note.id] ?? 'This note is encrypted. Enter the passphrase to read it.'
-  }, [decryptedBodies, isNoteLocked])
+    return legacyDecryptedBodies[note.id] ?? 'This older encrypted note needs its original key.'
+  }, [isNoteLocked, legacyDecryptedBodies])
 
   const filteredNotes = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -1247,12 +1228,18 @@ function App() {
     }
 
     setUnlockedNotes((currentNotes) => ({ ...currentNotes, [note.id]: true }))
+    setUnlockedNoteKeys((currentKeys) => ({ ...currentKeys, [note.id]: passcode }))
     setNotePasscodes((currentPasscodes) => ({ ...currentPasscodes, [note.id]: '' }))
     showToast('Private note unlocked.')
   }
 
   function lockPrivateNote(note: Note) {
     setUnlockedNotes((currentNotes) => ({ ...currentNotes, [note.id]: false }))
+    setUnlockedNoteKeys((currentKeys) => {
+      const nextKeys = { ...currentKeys }
+      delete nextKeys[note.id]
+      return nextKeys
+    })
     showToast('Private note locked.')
   }
 
@@ -1262,8 +1249,8 @@ function App() {
       return
     }
 
-    if (isEncryptedNote(note) && !decryptedBodies[note.id]) {
-      showToast('Enter the passphrase before editing this encrypted note.')
+    if (isEncryptedNote(note) && !legacyDecryptedBodies[note.id]) {
+      showToast('Unlock this older encrypted note with its original key before editing it.')
       return
     }
 
@@ -1435,12 +1422,6 @@ function App() {
     setStatus('')
 
     try {
-      if (form.is_encrypted && !encryptionPassphrase.trim()) {
-        showToast('Enter a passphrase before saving an encrypted note.')
-        setIsSaving(false)
-        return
-      }
-
       const preparedBody =
         isLetterMode && !/^dear chastine,/i.test(form.body.trim())
           ? `Dear Chastine,\n\n${form.body.trim()}\n\n- Primo`
@@ -1459,9 +1440,7 @@ function App() {
         : existingNote?.privacy_hash ?? ''
       const noteInput = {
         title: form.title.trim(),
-        body: form.is_encrypted
-          ? await encryptText(preparedBody, encryptionPassphrase.trim())
-          : preparedBody,
+        body: preparedBody,
         mood: form.mood,
         healing_status: form.healing_status,
         location: form.location.trim(),
@@ -1475,7 +1454,7 @@ function App() {
         felt_then: form.felt_then.trim(),
         understand_now: form.understand_now.trim(),
         reaction: form.reaction,
-        is_encrypted: form.is_encrypted,
+        is_encrypted: false,
         privacy_hash: nextPrivacyHash,
         privacy_hint: form.privacy_hint.trim(),
         is_pinned: form.is_pinned,
@@ -1868,18 +1847,6 @@ function App() {
             </span>
           </label>
 
-          <label className="favorite-toggle">
-            <input
-              checked={form.is_encrypted}
-              onChange={(event) => setForm({ ...form, is_encrypted: event.target.checked })}
-              type="checkbox"
-            />
-            <span>
-              <Lock aria-hidden="true" size={17} />
-              Encrypt this note
-            </span>
-          </label>
-
           <div className="privacy-note-fields" data-tour="private-note">
             <div className="section-heading">
               <span className="icon-box">
@@ -1948,17 +1915,8 @@ function App() {
             </div>
             <p className="privacy-copy">
               The app saves a salted verifier in Supabase, not the real passcode. Use
-              encryption too when the note body should be unreadable in the database.
+              a different passcode per private note if different people will add entries.
             </p>
-            <label>
-              Encryption passphrase
-              <input
-                onChange={(event) => setEncryptionPassphrase(event.target.value)}
-                placeholder="Unlock encrypted note bodies"
-                type="password"
-                value={encryptionPassphrase}
-              />
-            </label>
           </section>
 
           <section className="weather-panel" data-tour="weather" aria-label="Relationship weather">

@@ -24,7 +24,6 @@ The app is built with React, TypeScript, Vite, Supabase, and a polished responsi
 - PDF export for pinned or favorite notes
 - Backup and import as JSON
 - Per-note privacy locks with Supabase-stored salted passcode verifiers
-- Optional passphrase encryption for note bodies
 - Voice note URL support
 - Monthly recap, healing progress, and memory map
 - Markdown-style formatting for bold, italic, and quotes
@@ -116,6 +115,4 @@ npm run preview
 
 ## Notes
 
-Passphrase encryption is client-side. If you forget the passphrase for an encrypted note, the app cannot recover that note body.
-
-Private note locks save a salted verifier in Supabase so the same note can be unlocked across browsers without storing the real passcode. Use passphrase encryption when the note body itself should be unreadable in Supabase.
+Private note locks save a salted verifier in Supabase so the same note can be unlocked across browsers without storing the real passcode. If someone creates a private note, they should remember that note's passcode.
