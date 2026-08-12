@@ -498,6 +498,7 @@ function App() {
   const [legacyDecryptedBodies, setLegacyDecryptedBodies] = useState<Record<string, string>>({})
   const [legacyOriginalKeys, setLegacyOriginalKeys] = useState<Record<string, string>>({})
   const [notePasscodes, setNotePasscodes] = useState<Record<string, string>>({})
+  const [removeLockPasscodes, setRemoveLockPasscodes] = useState<Record<string, string>>({})
   const [tutorialStep, setTutorialStep] = useState<number | null>(null)
   const [tutorialPosition, setTutorialPosition] = useState<TutorialPosition | null>(null)
   const [copiedQuoteId, setCopiedQuoteId] = useState('')
@@ -1257,6 +1258,67 @@ function App() {
       return nextKeys
     })
     showToast('Private note locked.')
+  }
+
+  async function removePrivateNoteLock(note: Note, event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault()
+
+    const passcode = removeLockPasscodes[note.id]?.trim()
+
+    if (!note.privacy_hash) {
+      showToast('This note does not have a lock.')
+      return
+    }
+
+    if (!passcode) {
+      showToast('Enter the current note passcode first.')
+      return
+    }
+
+    if (!(await verifyPrivacyPasscode(passcode, note.privacy_hash))) {
+      showToast('That passcode did not match this note.')
+      return
+    }
+
+    try {
+      const updatedNote = await updateNote(
+        note.id,
+        toNoteInput(note, {
+          privacy_hash: '',
+          privacy_hint: '',
+        }),
+      )
+
+      setNotes((currentNotes) =>
+        currentNotes.map((currentNote) =>
+          currentNote.id === note.id ? updatedNote : currentNote,
+        ),
+      )
+      setSelectedNote((currentNote) => (currentNote?.id === note.id ? updatedNote : currentNote))
+      setUnlockedNotes((currentNotes) => {
+        const nextNotes = { ...currentNotes }
+        delete nextNotes[note.id]
+        return nextNotes
+      })
+      setUnlockedNoteKeys((currentKeys) => {
+        const nextKeys = { ...currentKeys }
+        delete nextKeys[note.id]
+        return nextKeys
+      })
+      setNotePasscodes((currentPasscodes) => {
+        const nextPasscodes = { ...currentPasscodes }
+        delete nextPasscodes[note.id]
+        return nextPasscodes
+      })
+      setRemoveLockPasscodes((currentPasscodes) => {
+        const nextPasscodes = { ...currentPasscodes }
+        delete nextPasscodes[note.id]
+        return nextPasscodes
+      })
+      showToast('Note lock removed.')
+    } catch {
+      showToast('Could not remove the lock yet. Check your Supabase policy setup.')
+    }
   }
 
   async function removeLegacyOriginalKey(note: Note, event?: FormEvent<HTMLFormElement>) {
@@ -2631,6 +2693,35 @@ function App() {
                   {selectedNote.is_archived ? 'Restore' : 'Archive'}
                 </button>
               </div>
+              {selectedNote.privacy_hash && !isNoteLocked(selectedNote) && (
+                <form
+                  className="note-unlock-panel remove-lock-panel"
+                  onSubmit={(event) => void removePrivateNoteLock(selectedNote, event)}
+                >
+                  <span className="icon-box">
+                    <Unlock aria-hidden="true" size={18} />
+                  </span>
+                  <div>
+                    <h3>Remove note lock</h3>
+                    <p>Enter the current note passcode to remove this lock from Supabase.</p>
+                  </div>
+                  <input
+                    onChange={(event) =>
+                      setRemoveLockPasscodes({
+                        ...removeLockPasscodes,
+                        [selectedNote.id]: event.target.value,
+                      })
+                    }
+                    placeholder="Current note passcode"
+                    type="password"
+                    value={removeLockPasscodes[selectedNote.id] ?? ''}
+                  />
+                  <button type="submit">
+                    <Unlock aria-hidden="true" size={17} />
+                    Remove lock
+                  </button>
+                </form>
+              )}
               {!isNoteLocked(selectedNote) && isEncryptedNote(selectedNote) && (
                 <form
                   className="note-unlock-panel legacy-key-panel"
