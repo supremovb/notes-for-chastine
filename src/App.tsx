@@ -39,6 +39,7 @@ import {
   type CSSProperties,
   type FormEvent,
   type ReactNode,
+  type SyntheticEvent,
   type UIEvent,
 } from 'react'
 import './App.css'
@@ -252,6 +253,33 @@ function getPhotoUrls(note: Pick<Note, 'image_url' | 'photo_urls'>) {
     .split(/[\n,]+/)
     .map((url) => url.trim())
     .filter(Boolean)
+}
+
+function getDisplayPhoto(url?: string) {
+  const cleanUrl = url?.trim()
+
+  if (
+    !cleanUrl ||
+    cleanUrl.startsWith('src/assets/') ||
+    cleanUrl.startsWith('/src/assets/') ||
+    cleanUrl.includes('\\src\\assets\\') ||
+    cleanUrl.includes('/src/assets/') ||
+    /^[a-z]:\\/i.test(cleanUrl)
+  ) {
+    return usCardImage
+  }
+
+  return cleanUrl
+}
+
+function getPrimaryPhoto(note: Pick<Note, 'image_url' | 'photo_urls'>) {
+  return getDisplayPhoto(getPhotoUrls(note)[0])
+}
+
+function handleImageFallback(event: SyntheticEvent<HTMLImageElement>) {
+  if (event.currentTarget.src !== usCardImage) {
+    event.currentTarget.src = usCardImage
+  }
 }
 
 function isEncryptedNote(note: Pick<Note, 'body' | 'is_encrypted'>) {
@@ -1412,7 +1440,11 @@ function App() {
         </div>
 
         <div className="portrait-stage" aria-label="Photo of us">
-          <img src={usImage} alt="Primo and Chastine in graduation clothes" />
+          <img
+            src={usImage}
+            alt="Primo and Chastine in graduation clothes"
+            onError={handleImageFallback}
+          />
           <div className="memory-strip">
             <span>Our photo</span>
             <strong>{latestNote ? latestNote.title : 'Waiting for the first note'}</strong>
@@ -2134,7 +2166,12 @@ function App() {
                 key={note.id}
                 onClick={() => setSelectedNote(note)}
               >
-                <img src={getPhotoUrls(note)[0] || usCardImage} alt="" loading="lazy" />
+                <img
+                  src={getPrimaryPhoto(note)}
+                  alt=""
+                  loading="lazy"
+                  onError={handleImageFallback}
+                />
                 <div className="note-content">
                   <div className="note-meta">
                     {isEncryptedNote(note) && (
@@ -2253,10 +2290,10 @@ function App() {
             <div className="reader-image-frame">
               <button
                 className="image-lightbox-trigger"
-                onClick={() => setLightboxImage(getPhotoUrls(selectedNote)[0] || usCardImage)}
+                onClick={() => setLightboxImage(getPrimaryPhoto(selectedNote))}
                 type="button"
               >
-                <img src={getPhotoUrls(selectedNote)[0] || usCardImage} alt="" />
+                <img src={getPrimaryPhoto(selectedNote)} alt="" onError={handleImageFallback} />
                 <span>
                   <Maximize2 aria-hidden="true" size={16} />
                   View photo
@@ -2373,10 +2410,15 @@ function App() {
                   {getPhotoUrls(selectedNote).map((photoUrl) => (
                     <button
                       key={photoUrl}
-                      onClick={() => setLightboxImage(photoUrl)}
+                      onClick={() => setLightboxImage(getDisplayPhoto(photoUrl))}
                       type="button"
                     >
-                      <img src={photoUrl} alt="" loading="lazy" />
+                      <img
+                        src={getDisplayPhoto(photoUrl)}
+                        alt=""
+                        loading="lazy"
+                        onError={handleImageFallback}
+                      />
                     </button>
                   ))}
                 </div>
@@ -2408,7 +2450,7 @@ function App() {
             <button className="close-reader" onClick={() => setPlaybackIndex(null)} type="button">
               <X aria-hidden="true" size={20} />
             </button>
-            <img src={getPhotoUrls(playbackNote)[0] || usCardImage} alt="" />
+            <img src={getPrimaryPhoto(playbackNote)} alt="" onError={handleImageFallback} />
             <div>
               <p className="eyebrow compact">
                 {playbackPosition + 1} of {filteredNotes.length}
@@ -2451,7 +2493,7 @@ function App() {
           <button className="close-reader" onClick={() => setLightboxImage('')} type="button">
             <X aria-hidden="true" size={20} />
           </button>
-          <img src={lightboxImage} alt="" />
+          <img src={getDisplayPhoto(lightboxImage)} alt="" onError={handleImageFallback} />
         </div>
       )}
 
