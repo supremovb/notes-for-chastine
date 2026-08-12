@@ -16,6 +16,8 @@ export type Note = {
   understand_now?: string
   reaction?: string
   is_encrypted?: boolean
+  privacy_hash?: string
+  privacy_hint?: string
   is_pinned?: boolean
   is_archived?: boolean
   is_favorite: boolean
@@ -55,6 +57,8 @@ function normalizeNote(note: Partial<Note>): Note {
     understand_now: note.understand_now ?? '',
     reaction: note.reaction ?? '',
     is_encrypted: note.is_encrypted ?? false,
+    privacy_hash: note.privacy_hash ?? '',
+    privacy_hint: note.privacy_hint ?? '',
     is_pinned: note.is_pinned ?? false,
     is_archived: note.is_archived ?? false,
     is_favorite: note.is_favorite ?? false,

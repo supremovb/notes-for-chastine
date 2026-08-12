@@ -630,6 +630,22 @@ textarea:focus {
   padding: 14px;
 }
 
+.privacy-copy {
+  margin: -4px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
+.privacy-note-fields,
+.note-unlock-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--subtle);
+  padding: 14px;
+}
+
 .weather-options {
   display: flex;
   flex-wrap: wrap;
@@ -1320,6 +1336,22 @@ textarea:focus {
     #292725;
 }
 
+.private-photo-placeholder {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  color: var(--ink-muted);
+}
+
+.private-photo-placeholder span {
+  font-size: 0.9rem;
+  font-weight: 820;
+}
+
 .image-lightbox-trigger {
   position: relative;
   width: 100%;
@@ -1419,6 +1451,39 @@ textarea:focus {
   color: var(--ink-soft);
   font-size: 0.9rem;
   line-height: 1.5;
+}
+
+.note-unlock-panel {
+  margin-bottom: 20px;
+}
+
+.note-unlock-panel h3 {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.note-unlock-panel p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
+.note-unlock-panel button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--surface);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 820;
+  padding: 0 14px;
 }
 
 .audio-note {
@@ -1678,6 +1743,64 @@ textarea:focus {
   backdrop-filter: blur(14px);
 }
 
+.tutorial-card {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 45;
+  display: grid;
+  width: min(410px, calc(100vw - 28px));
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  animation: tutorial-pop 260ms ease both;
+}
+
+.tutorial-card span {
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 860;
+  text-transform: uppercase;
+}
+
+.tutorial-card h2 {
+  margin: 5px 0 6px;
+  color: var(--ink);
+  font-size: 1.2rem;
+}
+
+.tutorial-card p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.tutorial-progress {
+  display: flex;
+  gap: 6px;
+}
+
+.tutorial-progress i {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--pill);
+}
+
+.tutorial-progress i.active {
+  background: var(--accent);
+}
+
+.tutorial-highlight {
+  position: relative;
+  z-index: 4;
+  animation: tutorial-pulse 1200ms ease-in-out infinite;
+  outline: 3px solid rgba(43, 104, 92, 0.28);
+  outline-offset: 5px;
+}
+
 :root[data-theme='dark'] .composer,
 :root[data-theme='dark'] .timeline,
 :root[data-theme='dark'] .note-card,
@@ -1696,6 +1819,8 @@ textarea:focus {
 :root[data-theme='dark'] .quote-shelf,
 :root[data-theme='dark'] .important-dates,
 :root[data-theme='dark'] .reflection-pair section,
+:root[data-theme='dark'] .privacy-note-fields,
+:root[data-theme='dark'] .note-unlock-panel,
 :root[data-theme='dark'] .audio-note,
 :root[data-theme='dark'] .date-list article {
   background: var(--subtle);
@@ -1743,6 +1868,7 @@ textarea:focus {
 :root[data-theme='dark'] .date-form button,
 :root[data-theme='dark'] .date-list button,
 :root[data-theme='dark'] .card-actions button,
+:root[data-theme='dark'] .note-unlock-panel button,
 :root[data-theme='dark'] .reader-actions button,
 :root[data-theme='dark'] .reaction-row button,
 :root[data-theme='dark'] .pinned-actions button,
@@ -1756,6 +1882,11 @@ textarea:focus {
 
 :root[data-theme='dark'] .reader-gallery button {
   background: var(--control);
+  border-color: var(--line);
+}
+
+:root[data-theme='dark'] .tutorial-card {
+  background: var(--panel-solid);
   border-color: var(--line);
 }
 
@@ -1876,6 +2007,24 @@ textarea:focus {
   from {
     opacity: 0;
     transform: translateY(8px);
+  }
+}
+
+@keyframes tutorial-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
+@keyframes tutorial-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(43, 104, 92, 0.24);
+  }
+
+  50% {
+    box-shadow: 0 0 0 10px rgba(43, 104, 92, 0);
   }
 }
 

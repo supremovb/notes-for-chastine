@@ -14,6 +14,8 @@ create table if not exists public.relationship_notes (
   understand_now text not null default '',
   reaction text not null default '',
   is_encrypted boolean not null default false,
+  privacy_hash text not null default '',
+  privacy_hint text not null default '',
   is_pinned boolean not null default false,
   is_archived boolean not null default false,
   is_favorite boolean not null default false,
@@ -44,6 +46,12 @@ add column if not exists reaction text not null default '';
 
 alter table public.relationship_notes
 add column if not exists is_encrypted boolean not null default false;
+
+alter table public.relationship_notes
+add column if not exists privacy_hash text not null default '';
+
+alter table public.relationship_notes
+add column if not exists privacy_hint text not null default '';
 
 alter table public.relationship_notes
 add column if not exists is_pinned boolean not null default false;

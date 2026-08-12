@@ -92,11 +92,11 @@ const weatherOptions = ['Clear', 'Quiet', 'Heavy', 'Hopeful', 'Distant', 'Soft']
 const themes = ['warm', 'dark', 'minimal'] as const
 const lenses = ['All', 'Favorites', 'Long reads', 'Unsent letters']
 const draftStorageKey = 'daily-notes-for-chastine-draft'
-const pinStorageKey = 'daily-notes-for-chastine-pin'
 const themeStorageKey = 'daily-notes-for-chastine-theme'
 const datesStorageKey = 'daily-notes-for-chastine-important-dates'
 const weatherStorageKey = 'daily-notes-for-chastine-weather'
 const encryptedPrefix = 'encrypted:v1:'
+const privacyPrefix = 'lock:v1:'
 const writingNudges = [
   'What changed today?',
   'What did I miss?',
@@ -139,6 +139,33 @@ const noteTemplates = [
     understand_now: 'I am starting to understand...',
   },
 ]
+const tutorialSteps = [
+  {
+    target: 'compose',
+    title: 'Write the memory',
+    body: 'Start here when you want to add a thought, POV, letter, photo, lock, or reaction.',
+  },
+  {
+    target: 'private-note',
+    title: 'Lock one note',
+    body: 'Add a note passcode to make only that note ask for a key before it opens.',
+  },
+  {
+    target: 'filters',
+    title: 'Find a feeling',
+    body: 'Use filters, search, archive view, and playback when the timeline starts growing.',
+  },
+  {
+    target: 'calendar',
+    title: 'Follow the days',
+    body: 'The calendar shows which dates have memories and lets you jump into one day.',
+  },
+  {
+    target: 'weather',
+    title: 'Daily check-in',
+    body: 'Relationship weather is a small honest read of how today feels.',
+  },
+]
 
 function getTodayKey() {
   const today = new Date()
@@ -163,6 +190,8 @@ const fallbackNotes: Note[] = [
     understand_now: 'Hindi kailangang maayos lahat agad para maging totoo yung soft moment.',
     reaction: 'Gave me hope',
     is_encrypted: false,
+    privacy_hash: '',
+    privacy_hint: '',
     is_pinned: true,
     is_archived: false,
     is_favorite: true,
@@ -187,6 +216,8 @@ const initialForm = {
   understand_now: '',
   reaction: '',
   is_encrypted: false,
+  privacy_key: '',
+  privacy_hint: '',
   is_pinned: false,
   is_archived: false,
   is_favorite: false,
@@ -218,6 +249,8 @@ function normalizeFormDraft(formDraft: Partial<NoteForm>): NoteForm {
     understand_now: formDraft.understand_now ?? initialForm.understand_now,
     reaction: formDraft.reaction ?? initialForm.reaction,
     is_encrypted: formDraft.is_encrypted ?? initialForm.is_encrypted,
+    privacy_key: formDraft.privacy_key ?? initialForm.privacy_key,
+    privacy_hint: formDraft.privacy_hint ?? initialForm.privacy_hint,
     is_pinned: formDraft.is_pinned ?? initialForm.is_pinned,
     is_archived: formDraft.is_archived ?? initialForm.is_archived,
     is_favorite: formDraft.is_favorite ?? initialForm.is_favorite,
@@ -356,6 +389,44 @@ async function decryptText(payload: string, passphrase: string) {
   return new TextDecoder().decode(decrypted)
 }
 
+async function derivePrivacyHash(passcode: string, salt: Uint8Array) {
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(passcode),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  )
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: toArrayBuffer(salt),
+      iterations: 120000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256,
+  )
+
+  return bytesToBase64(new Uint8Array(bits))
+}
+
+async function createPrivacyHash(passcode: string) {
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  return `${privacyPrefix}${bytesToBase64(salt)}:${await derivePrivacyHash(passcode, salt)}`
+}
+
+async function verifyPrivacyPasscode(passcode: string, storedHash: string) {
+  const [, , saltBase64, hash] = storedHash.split(':')
+
+  if (!saltBase64 || !hash) {
+    return false
+  }
+
+  const nextHash = await derivePrivacyHash(passcode, base64ToBytes(saltBase64))
+  return nextHash === hash
+}
+
 function getMonthDays(referenceDate: Date) {
   const year = referenceDate.getFullYear()
   const month = referenceDate.getMonth()
@@ -420,10 +491,9 @@ function App() {
   )
   const [encryptionPassphrase, setEncryptionPassphrase] = useState('')
   const [decryptedBodies, setDecryptedBodies] = useState<Record<string, string>>({})
-  const [savedPin, setSavedPin] = useState(() => localStorage.getItem(pinStorageKey) ?? '')
-  const [pinInput, setPinInput] = useState('')
-  const [newPin, setNewPin] = useState('')
-  const [isUnlocked, setIsUnlocked] = useState(() => !localStorage.getItem(pinStorageKey))
+  const [unlockedNotes, setUnlockedNotes] = useState<Record<string, boolean>>({})
+  const [notePasscodes, setNotePasscodes] = useState<Record<string, string>>({})
+  const [tutorialStep, setTutorialStep] = useState<number | null>(null)
   const [copiedQuoteId, setCopiedQuoteId] = useState('')
   const [toasts, setToasts] = useState<Toast[]>([])
   const [readerProgress, setReaderProgress] = useState(0)
@@ -571,21 +641,53 @@ function App() {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') {
+        if (tutorialStep !== null) {
+          setTutorialStep(null)
+          return
+        }
+
         setSelectedNote(null)
       }
     }
 
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [])
+  }, [tutorialStep])
+
+  useEffect(() => {
+    if (tutorialStep === null) {
+      document.querySelectorAll('[data-tour].tutorial-highlight').forEach((element) => {
+        element.classList.remove('tutorial-highlight')
+      })
+      return
+    }
+
+    const target = document.querySelector(`[data-tour="${tutorialSteps[tutorialStep].target}"]`)
+    target?.classList.add('tutorial-highlight')
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+    return () => {
+      target?.classList.remove('tutorial-highlight')
+    }
+  }, [tutorialStep])
+
+  const isNoteLocked = useCallback(
+    (note: Pick<Note, 'id' | 'privacy_hash'>) =>
+      Boolean(note.privacy_hash) && !unlockedNotes[note.id],
+    [unlockedNotes],
+  )
 
   const getReadableBody = useCallback((note: Note) => {
+    if (isNoteLocked(note)) {
+      return 'This note is private. Unlock it to read what is inside.'
+    }
+
     if (!isEncryptedNote(note)) {
       return note.body
     }
 
     return decryptedBodies[note.id] ?? 'This note is encrypted. Enter the passphrase to read it.'
-  }, [decryptedBodies])
+  }, [decryptedBodies, isNoteLocked])
 
   const filteredNotes = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -661,8 +763,8 @@ function App() {
       visibleNotes
         .filter((note) => note.is_favorite)
         .slice(0, 3)
-        .map((note) => ({ id: note.id, note, quote: getQuoteFromNote(note) })),
-    [visibleNotes],
+        .map((note) => ({ id: note.id, note, quote: getQuoteFromNote({ ...note, body: getReadableBody(note) }) })),
+    [getReadableBody, visibleNotes],
   )
   const pinnedNote = useMemo(
     () => visibleNotes.find((note) => note.is_pinned) ?? null,
@@ -795,6 +897,8 @@ function App() {
       understand_now: nextNote.understand_now ?? '',
       reaction: nextNote.reaction ?? '',
       is_encrypted: nextNote.is_encrypted ?? false,
+      privacy_hash: nextNote.privacy_hash ?? '',
+      privacy_hint: nextNote.privacy_hint ?? '',
       is_pinned: nextNote.is_pinned ?? false,
       is_archived: nextNote.is_archived ?? false,
       is_favorite: nextNote.is_favorite,
@@ -819,6 +923,8 @@ function App() {
       understand_now: 'One soft morning does not fix everything, pero it can still matter.',
       reaction: 'Gave me hope',
       is_encrypted: false,
+      privacy_key: '',
+      privacy_hint: '',
       is_pinned: true,
       is_archived: false,
       is_favorite: true,
@@ -902,6 +1008,8 @@ function App() {
               audio_url: note.audio_url ?? '',
               is_favorite: note.is_favorite ?? false,
               is_encrypted: note.is_encrypted ?? false,
+              privacy_hash: note.privacy_hash ?? '',
+              privacy_hint: note.privacy_hint ?? '',
               created_at: note.created_at ?? new Date().toISOString(),
             } as Note),
           ),
@@ -1044,50 +1152,37 @@ function App() {
     }
   }
 
-  function unlockJournal(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  async function unlockPrivateNote(note: Note, event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault()
 
-    if (pinInput === savedPin) {
-      setIsUnlocked(true)
-      setPinInput('')
-      setStatus('')
+    const passcode = notePasscodes[note.id]?.trim()
+
+    if (!passcode) {
+      showToast('Enter this note passcode first.')
       return
     }
 
-    setStatus('Wrong PIN. Try again.')
-  }
-
-  function savePin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-
-    if (newPin.trim().length < 4) {
-      setStatus('Use at least 4 characters for the PIN.')
+    if (!note.privacy_hash || !(await verifyPrivacyPasscode(passcode, note.privacy_hash))) {
+      showToast('That passcode did not unlock this note.')
       return
     }
 
-    localStorage.setItem(pinStorageKey, newPin.trim())
-    setSavedPin(newPin.trim())
-    setNewPin('')
-    setIsUnlocked(true)
-    showToast('Privacy lock is set.')
+    setUnlockedNotes((currentNotes) => ({ ...currentNotes, [note.id]: true }))
+    setNotePasscodes((currentPasscodes) => ({ ...currentPasscodes, [note.id]: '' }))
+    showToast('Private note unlocked.')
   }
 
-  function disablePin() {
-    localStorage.removeItem(pinStorageKey)
-    setSavedPin('')
-    setPinInput('')
-    setIsUnlocked(true)
-    showToast('Privacy lock is off.')
-  }
-
-  function lockJournal() {
-    if (savedPin) {
-      setSelectedNote(null)
-      setIsUnlocked(false)
-    }
+  function lockPrivateNote(note: Note) {
+    setUnlockedNotes((currentNotes) => ({ ...currentNotes, [note.id]: false }))
+    showToast('Private note locked.')
   }
 
   function editNote(note: Note) {
+    if (isNoteLocked(note)) {
+      showToast('Unlock this note before editing it.')
+      return
+    }
+
     if (isEncryptedNote(note) && !decryptedBodies[note.id]) {
       showToast('Enter the passphrase before editing this encrypted note.')
       return
@@ -1110,6 +1205,8 @@ function App() {
       understand_now: note.understand_now ?? '',
       reaction: note.reaction ?? '',
       is_encrypted: note.is_encrypted ?? false,
+      privacy_key: '',
+      privacy_hint: note.privacy_hint ?? '',
       is_pinned: note.is_pinned ?? false,
       is_archived: note.is_archived ?? false,
       is_favorite: note.is_favorite,
@@ -1275,12 +1372,19 @@ function App() {
         .filter(Boolean)
         .join('\n')
       const primaryImage = form.image_url.trim() || preparedPhotos.split('\n')[0] || usCardImage
+      const existingNote = editingNoteId
+        ? notes.find((note) => note.id === editingNoteId)
+        : null
+      const nextPrivacyHash = form.privacy_key.trim()
+        ? await createPrivacyHash(form.privacy_key.trim())
+        : existingNote?.privacy_hash ?? ''
       const noteInput = {
-        ...form,
         title: form.title.trim(),
         body: form.is_encrypted
           ? await encryptText(preparedBody, encryptionPassphrase.trim())
           : preparedBody,
+        mood: form.mood,
+        healing_status: form.healing_status,
         location: form.location.trim(),
         photo_urls: preparedPhotos,
         audio_url: form.audio_url.trim(),
@@ -1293,8 +1397,11 @@ function App() {
         understand_now: form.understand_now.trim(),
         reaction: form.reaction,
         is_encrypted: form.is_encrypted,
+        privacy_hash: nextPrivacyHash,
+        privacy_hint: form.privacy_hint.trim(),
         is_pinned: form.is_pinned,
         is_archived: form.is_archived,
+        is_favorite: form.is_favorite,
         entry_date: form.entry_date,
         pov: isLetterMode ? 'Letter for Chastine' : form.pov,
         image_url: primaryImage,
@@ -1326,6 +1433,9 @@ function App() {
             ],
       )
       setSelectedNote(savedNote)
+      if (savedNote.privacy_hash && form.privacy_key.trim()) {
+        setUnlockedNotes((currentNotes) => ({ ...currentNotes, [savedNote.id]: true }))
+      }
       setForm(initialForm)
       setEditingNoteId('')
       setIsLetterMode(false)
@@ -1335,36 +1445,6 @@ function App() {
     } finally {
       setIsSaving(false)
     }
-  }
-
-  if (!isUnlocked) {
-    return (
-      <main className="lock-screen">
-        <form className="lock-card" onSubmit={unlockJournal}>
-          <span className="icon-box">
-            <Lock aria-hidden="true" size={20} />
-          </span>
-          <div>
-            <p className="eyebrow compact">Private journal</p>
-            <h1>Unlock Notes for Chastine</h1>
-            <p>Enter your PIN to open the journal.</p>
-          </div>
-          <input
-            autoFocus
-            inputMode="numeric"
-            onChange={(event) => setPinInput(event.target.value)}
-            placeholder="PIN"
-            type="password"
-            value={pinInput}
-          />
-          <button className="save-button" type="submit">
-            <Unlock aria-hidden="true" size={18} />
-            Unlock
-          </button>
-          {status && <p className="status">{status}</p>}
-        </form>
-      </main>
-    )
   }
 
   return (
@@ -1397,6 +1477,10 @@ function App() {
               <Shuffle aria-hidden="true" size={17} />
               Random memory
             </button>
+            <button data-tour="guide" type="button" onClick={() => setTutorialStep(0)}>
+              <Sparkles aria-hidden="true" size={17} />
+              Guide me
+            </button>
             <button type="button" onClick={cycleTheme}>
               <Palette aria-hidden="true" size={17} />
               {theme}
@@ -1414,12 +1498,6 @@ function App() {
               <Download aria-hidden="true" size={17} />
               Import
             </label>
-            {savedPin && (
-              <button type="button" onClick={lockJournal}>
-                <Lock aria-hidden="true" size={17} />
-                Lock
-              </button>
-            )}
           </div>
           <div className="writing-nudges" aria-label="Writing nudges">
             {writingNudges.map((nudge) => (
@@ -1491,7 +1569,7 @@ function App() {
       )}
 
       <section className="workspace" aria-label="Relationship journal workspace">
-        <form className="composer" onSubmit={handleSubmit}>
+        <form className="composer" data-tour="compose" onSubmit={handleSubmit}>
           <div className="section-heading">
             <span className="icon-box">
               {isLetterMode ? (
@@ -1716,6 +1794,37 @@ function App() {
             </span>
           </label>
 
+          <div className="privacy-note-fields" data-tour="private-note">
+            <div className="section-heading">
+              <span className="icon-box">
+                <Lock aria-hidden="true" size={18} />
+              </span>
+              <div>
+                <h2>Private note lock</h2>
+                <p>Lock only this note with a passcode saved as a Supabase hash.</p>
+              </div>
+            </div>
+            <div className="field-grid">
+              <label>
+                Note passcode
+                <input
+                  onChange={(event) => setForm({ ...form, privacy_key: event.target.value })}
+                  placeholder={editingNoteId ? 'Leave blank to keep current lock' : 'Optional'}
+                  type="password"
+                  value={form.privacy_key}
+                />
+              </label>
+              <label>
+                Hint
+                <input
+                  onChange={(event) => setForm({ ...form, privacy_hint: event.target.value })}
+                  placeholder="A clue only you understand"
+                  value={form.privacy_hint}
+                />
+              </label>
+            </div>
+          </div>
+
           <label>
             Soft reaction
             <select
@@ -1744,31 +1853,17 @@ function App() {
           <section className="privacy-panel" aria-label="Privacy lock">
             <div className="section-heading">
               <span className="icon-box">
-                {savedPin ? (
-                  <Lock aria-hidden="true" size={18} />
-                ) : (
-                  <Unlock aria-hidden="true" size={18} />
-                )}
+                <Lock aria-hidden="true" size={18} />
               </span>
               <div>
-                <h2>Privacy lock</h2>
-                <p>{savedPin ? 'PIN is active on this browser.' : 'Add a local PIN for this browser.'}</p>
+                <h2>Note privacy</h2>
+                <p>Each locked note asks for its own passcode before it opens.</p>
               </div>
             </div>
-            <form className="privacy-form" onSubmit={savePin}>
-              <input
-                onChange={(event) => setNewPin(event.target.value)}
-                placeholder={savedPin ? 'New PIN' : 'Set PIN'}
-                type="password"
-                value={newPin}
-              />
-              <button type="submit">{savedPin ? 'Change PIN' : 'Set PIN'}</button>
-              {savedPin && (
-                <button onClick={disablePin} type="button">
-                  Turn off
-                </button>
-              )}
-            </form>
+            <p className="privacy-copy">
+              The app saves a salted verifier in Supabase, not the real passcode. Use
+              encryption too when the note body should be unreadable in the database.
+            </p>
             <label>
               Encryption passphrase
               <input
@@ -1780,7 +1875,7 @@ function App() {
             </label>
           </section>
 
-          <section className="weather-panel" aria-label="Relationship weather">
+          <section className="weather-panel" data-tour="weather" aria-label="Relationship weather">
             <div className="section-heading">
               <span className="icon-box">
                 <Moon aria-hidden="true" size={18} />
@@ -1844,7 +1939,7 @@ function App() {
             </label>
           </div>
 
-          <div className="lens-tabs" aria-label="Filter notes by type">
+          <div className="lens-tabs" data-tour="filters" aria-label="Filter notes by type">
             <button
               className={showArchived ? 'active' : ''}
               onClick={() => setShowArchived((current) => !current)}
@@ -2018,7 +2113,7 @@ function App() {
           </section>
 
           <section className="interactive-dock" aria-label="Interactive note tools">
-            <div className="mood-calendar">
+            <div className="mood-calendar" data-tour="calendar">
               <div className="dock-heading">
                 <div>
                   <h3>Mood calendar</h3>
@@ -2174,6 +2269,12 @@ function App() {
                 />
                 <div className="note-content">
                   <div className="note-meta">
+                    {note.privacy_hash && (
+                      <span>
+                        <Lock aria-hidden="true" size={14} />
+                        Private
+                      </span>
+                    )}
                     {isEncryptedNote(note) && (
                       <span>
                         <Lock aria-hidden="true" size={14} />
@@ -2288,20 +2389,33 @@ function App() {
               <X aria-hidden="true" size={20} />
             </button>
             <div className="reader-image-frame">
-              <button
-                className="image-lightbox-trigger"
-                onClick={() => setLightboxImage(getPrimaryPhoto(selectedNote))}
-                type="button"
-              >
-                <img src={getPrimaryPhoto(selectedNote)} alt="" onError={handleImageFallback} />
-                <span>
-                  <Maximize2 aria-hidden="true" size={16} />
-                  View photo
-                </span>
-              </button>
+              {isNoteLocked(selectedNote) ? (
+                <div className="private-photo-placeholder">
+                  <Lock aria-hidden="true" size={28} />
+                  <span>Private photo</span>
+                </div>
+              ) : (
+                <button
+                  className="image-lightbox-trigger"
+                  onClick={() => setLightboxImage(getPrimaryPhoto(selectedNote))}
+                  type="button"
+                >
+                  <img src={getPrimaryPhoto(selectedNote)} alt="" onError={handleImageFallback} />
+                  <span>
+                    <Maximize2 aria-hidden="true" size={16} />
+                    View photo
+                  </span>
+                </button>
+              )}
             </div>
             <div className="reader-body" onScroll={handleReaderScroll}>
               <div className="note-meta">
+                {selectedNote.privacy_hash && (
+                  <span>
+                    <Lock aria-hidden="true" size={14} />
+                    Private
+                  </span>
+                )}
                 {isEncryptedNote(selectedNote) && (
                   <span>
                     <Lock aria-hidden="true" size={14} />
@@ -2327,6 +2441,40 @@ function App() {
                 <span>{getReadingMinutes(getReadableBody(selectedNote))} min read</span>
               </div>
               <h2>{selectedNote.title}</h2>
+              {isNoteLocked(selectedNote) && (
+                <form
+                  className="note-unlock-panel"
+                  onSubmit={(event) => void unlockPrivateNote(selectedNote, event)}
+                >
+                  <span className="icon-box">
+                    <Lock aria-hidden="true" size={18} />
+                  </span>
+                  <div>
+                    <h3>This note is private</h3>
+                    <p>
+                      {selectedNote.privacy_hint
+                        ? `Hint: ${selectedNote.privacy_hint}`
+                        : 'Enter the passcode saved for this note.'}
+                    </p>
+                  </div>
+                  <input
+                    autoFocus
+                    onChange={(event) =>
+                      setNotePasscodes({
+                        ...notePasscodes,
+                        [selectedNote.id]: event.target.value,
+                      })
+                    }
+                    placeholder="Note passcode"
+                    type="password"
+                    value={notePasscodes[selectedNote.id] ?? ''}
+                  />
+                  <button type="submit">
+                    <Unlock aria-hidden="true" size={17} />
+                    Unlock note
+                  </button>
+                </form>
+              )}
               <div className="reader-actions" aria-label="Reader navigation">
                 <button
                   disabled={selectedNoteIndex <= 0}
@@ -2344,10 +2492,16 @@ function App() {
                   Next
                   <ChevronRight aria-hidden="true" size={17} />
                 </button>
-                <button onClick={() => editNote(selectedNote)} type="button">
+                <button disabled={isNoteLocked(selectedNote)} onClick={() => editNote(selectedNote)} type="button">
                   <Edit3 aria-hidden="true" size={17} />
                   Edit
                 </button>
+                {selectedNote.privacy_hash && !isNoteLocked(selectedNote) && (
+                  <button onClick={() => lockPrivateNote(selectedNote)} type="button">
+                    <Lock aria-hidden="true" size={17} />
+                    Lock note
+                  </button>
+                )}
                 <button onClick={() => void togglePinnedNote(selectedNote)} type="button">
                   <Star aria-hidden="true" size={17} />
                   {selectedNote.is_pinned ? 'Unpin' : 'Pin'}
@@ -2368,6 +2522,7 @@ function App() {
                   {selectedNote.is_archived ? 'Restore' : 'Archive'}
                 </button>
               </div>
+              {!isNoteLocked(selectedNote) && (
               <div className="reaction-row" aria-label="Soft reactions">
                 {softReactions.map((reaction) => (
                   <button
@@ -2380,7 +2535,8 @@ function App() {
                   </button>
                 ))}
               </div>
-              {(selectedNote.felt_then || selectedNote.understand_now) && (
+              )}
+              {!isNoteLocked(selectedNote) && (selectedNote.felt_then || selectedNote.understand_now) && (
                 <div className="reflection-pair">
                   {selectedNote.felt_then && (
                     <section>
@@ -2396,7 +2552,7 @@ function App() {
                   )}
                 </div>
               )}
-              {selectedNote.audio_url && (
+              {!isNoteLocked(selectedNote) && selectedNote.audio_url && (
                 <div className="audio-note">
                   <span>
                     <Mic aria-hidden="true" size={16} />
@@ -2405,7 +2561,7 @@ function App() {
                   <audio controls src={selectedNote.audio_url} />
                 </div>
               )}
-              {getPhotoUrls(selectedNote).length > 1 && (
+              {!isNoteLocked(selectedNote) && getPhotoUrls(selectedNote).length > 1 && (
                 <div className="reader-gallery" aria-label="More photos">
                   {getPhotoUrls(selectedNote).map((photoUrl) => (
                     <button
@@ -2423,6 +2579,7 @@ function App() {
                   ))}
                 </div>
               )}
+              {!isNoteLocked(selectedNote) && (
               <div className="reader-text">
                 {getReadableBody(selectedNote).split('\n\n').map((paragraph) =>
                   paragraph.trim().startsWith('>') ? (
@@ -2434,6 +2591,7 @@ function App() {
                   ),
                 )}
               </div>
+              )}
             </div>
           </article>
         </div>
@@ -2495,6 +2653,52 @@ function App() {
           </button>
           <img src={getDisplayPhoto(lightboxImage)} alt="" onError={handleImageFallback} />
         </div>
+      )}
+
+      {tutorialStep !== null && (
+        <section className="tutorial-card" aria-live="polite">
+          <div>
+            <span>
+              {tutorialStep + 1} / {tutorialSteps.length}
+            </span>
+            <h2>{tutorialSteps[tutorialStep].title}</h2>
+            <p>{tutorialSteps[tutorialStep].body}</p>
+          </div>
+          <div className="tutorial-progress" aria-hidden="true">
+            {tutorialSteps.map((step, index) => (
+              <i className={index === tutorialStep ? 'active' : ''} key={step.target} />
+            ))}
+          </div>
+          <div className="reader-actions">
+            <button
+              disabled={tutorialStep <= 0}
+              onClick={() => setTutorialStep((currentStep) => Math.max(0, (currentStep ?? 0) - 1))}
+              type="button"
+            >
+              <ChevronLeft aria-hidden="true" size={17} />
+              Back
+            </button>
+            <button
+              onClick={() =>
+                setTutorialStep((currentStep) =>
+                  currentStep === null || currentStep >= tutorialSteps.length - 1
+                    ? null
+                    : currentStep + 1,
+                )
+              }
+              type="button"
+            >
+              {tutorialStep >= tutorialSteps.length - 1 ? 'Done' : 'Next'}
+              {tutorialStep < tutorialSteps.length - 1 && (
+                <ChevronRight aria-hidden="true" size={17} />
+              )}
+            </button>
+            <button onClick={() => setTutorialStep(null)} type="button">
+              <X aria-hidden="true" size={17} />
+              Close
+            </button>
+          </div>
+        </section>
       )}
 
       {pendingDiscardAction && (
