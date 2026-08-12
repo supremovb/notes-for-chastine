@@ -95,6 +95,7 @@ const draftStorageKey = 'daily-notes-for-chastine-draft'
 const themeStorageKey = 'daily-notes-for-chastine-theme'
 const datesStorageKey = 'daily-notes-for-chastine-important-dates'
 const weatherStorageKey = 'daily-notes-for-chastine-weather'
+const tutorialSeenStorageKey = 'daily-notes-for-chastine-tutorial-seen'
 const encryptedPrefix = 'encrypted:v1:'
 const privacyPrefix = 'lock:v1:'
 const writingNudges = [
@@ -141,31 +142,42 @@ const noteTemplates = [
 ]
 const tutorialSteps = [
   {
+    target: 'guide',
+    title: 'A quick walk-through',
+    body: 'This short tour points to the important controls so the journal feels easier to use.',
+    placement: 'bottom',
+  },
+  {
     target: 'compose',
     title: 'Write the memory',
     body: 'Start here when you want to add a thought, POV, letter, photo, lock, or reaction.',
+    placement: 'right',
   },
   {
     target: 'private-note',
     title: 'Lock one note',
     body: 'Add a note passcode to make only that note ask for a key before it opens.',
+    placement: 'right',
   },
   {
     target: 'filters',
     title: 'Find a feeling',
     body: 'Use filters, search, archive view, and playback when the timeline starts growing.',
+    placement: 'bottom',
   },
   {
     target: 'calendar',
     title: 'Follow the days',
     body: 'The calendar shows which dates have memories and lets you jump into one day.',
+    placement: 'right',
   },
   {
     target: 'weather',
     title: 'Daily check-in',
     body: 'Relationship weather is a small honest read of how today feels.',
+    placement: 'left',
   },
-]
+] as const
 
 function getTodayKey() {
   const today = new Date()
@@ -260,6 +272,13 @@ function normalizeFormDraft(formDraft: Partial<NoteForm>): NoteForm {
 type Toast = {
   id: string
   message: string
+}
+
+type TutorialPosition = {
+  arrowLeft: number
+  arrowTop: number
+  cardLeft: number
+  cardTop: number
 }
 
 const shouldUseDemoNotes = !isSupabaseConfigured()
@@ -494,6 +513,7 @@ function App() {
   const [unlockedNotes, setUnlockedNotes] = useState<Record<string, boolean>>({})
   const [notePasscodes, setNotePasscodes] = useState<Record<string, string>>({})
   const [tutorialStep, setTutorialStep] = useState<number | null>(null)
+  const [tutorialPosition, setTutorialPosition] = useState<TutorialPosition | null>(null)
   const [copiedQuoteId, setCopiedQuoteId] = useState('')
   const [toasts, setToasts] = useState<Toast[]>([])
   const [readerProgress, setReaderProgress] = useState(0)
@@ -655,19 +675,78 @@ function App() {
   }, [tutorialStep])
 
   useEffect(() => {
+    if (isLoading || localStorage.getItem(tutorialSeenStorageKey)) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setTutorialStep(0)
+      localStorage.setItem(tutorialSeenStorageKey, 'true')
+    }, 900)
+
+    return () => window.clearTimeout(timer)
+  }, [isLoading])
+
+  useEffect(() => {
     if (tutorialStep === null) {
       document.querySelectorAll('[data-tour].tutorial-highlight').forEach((element) => {
         element.classList.remove('tutorial-highlight')
       })
+      setTutorialPosition(null)
       return
     }
 
-    const target = document.querySelector(`[data-tour="${tutorialSteps[tutorialStep].target}"]`)
-    target?.classList.add('tutorial-highlight')
-    target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const updateTutorialPosition = () => {
+      const step = tutorialSteps[tutorialStep]
+      const target = document.querySelector(`[data-tour="${step.target}"]`)
+
+      if (!(target instanceof HTMLElement)) {
+        setTutorialPosition(null)
+        return
+      }
+
+      target.classList.add('tutorial-highlight')
+      target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+
+      const rect = target.getBoundingClientRect()
+      const cardWidth = Math.min(410, window.innerWidth - 28)
+      const cardHeight = 250
+      const gap = 22
+      const maxLeft = window.innerWidth - cardWidth - 14
+      const maxTop = window.innerHeight - cardHeight - 14
+      const centeredLeft = rect.left + rect.width / 2 - cardWidth / 2
+      let cardLeft = Math.max(14, Math.min(maxLeft, centeredLeft))
+      let cardTop = Math.max(14, Math.min(maxTop, rect.bottom + gap))
+
+      if (step.placement === 'right') {
+        cardLeft = Math.max(14, Math.min(maxLeft, rect.right + gap))
+        cardTop = Math.max(14, Math.min(maxTop, rect.top + rect.height / 2 - cardHeight / 2))
+      }
+
+      if (step.placement === 'left') {
+        cardLeft = Math.max(14, Math.min(maxLeft, rect.left - cardWidth - gap))
+        cardTop = Math.max(14, Math.min(maxTop, rect.top + rect.height / 2 - cardHeight / 2))
+      }
+
+      setTutorialPosition({
+        arrowLeft: rect.left + rect.width / 2,
+        arrowTop: rect.top + rect.height / 2,
+        cardLeft,
+        cardTop,
+      })
+    }
+
+    const timer = window.setTimeout(updateTutorialPosition, 320)
+    window.addEventListener('resize', updateTutorialPosition)
+    window.addEventListener('scroll', updateTutorialPosition, true)
 
     return () => {
-      target?.classList.remove('tutorial-highlight')
+      window.clearTimeout(timer)
+      window.removeEventListener('resize', updateTutorialPosition)
+      window.removeEventListener('scroll', updateTutorialPosition, true)
+      document.querySelectorAll('[data-tour].tutorial-highlight').forEach((element) => {
+        element.classList.remove('tutorial-highlight')
+      })
     }
   }, [tutorialStep])
 
@@ -1477,7 +1556,14 @@ function App() {
               <Shuffle aria-hidden="true" size={17} />
               Random memory
             </button>
-            <button data-tour="guide" type="button" onClick={() => setTutorialStep(0)}>
+            <button
+              data-tour="guide"
+              type="button"
+              onClick={() => {
+                localStorage.setItem(tutorialSeenStorageKey, 'true')
+                setTutorialStep(0)
+              }}
+            >
               <Sparkles aria-hidden="true" size={17} />
               Guide me
             </button>
@@ -2656,49 +2742,81 @@ function App() {
       )}
 
       {tutorialStep !== null && (
-        <section className="tutorial-card" aria-live="polite">
-          <div>
-            <span>
-              {tutorialStep + 1} / {tutorialSteps.length}
-            </span>
-            <h2>{tutorialSteps[tutorialStep].title}</h2>
-            <p>{tutorialSteps[tutorialStep].body}</p>
-          </div>
-          <div className="tutorial-progress" aria-hidden="true">
-            {tutorialSteps.map((step, index) => (
-              <i className={index === tutorialStep ? 'active' : ''} key={step.target} />
-            ))}
-          </div>
-          <div className="reader-actions">
-            <button
-              disabled={tutorialStep <= 0}
-              onClick={() => setTutorialStep((currentStep) => Math.max(0, (currentStep ?? 0) - 1))}
-              type="button"
+        <div className="tutorial-layer" role="presentation">
+          <div className="tutorial-scrim" onClick={() => setTutorialStep(null)} />
+          {tutorialPosition && (
+            <svg
+              className="tutorial-arrow"
+              height="100%"
+              viewBox={`0 0 ${window.innerWidth} ${window.innerHeight}`}
+              width="100%"
+              aria-hidden="true"
             >
-              <ChevronLeft aria-hidden="true" size={17} />
-              Back
-            </button>
-            <button
-              onClick={() =>
-                setTutorialStep((currentStep) =>
-                  currentStep === null || currentStep >= tutorialSteps.length - 1
-                    ? null
-                    : currentStep + 1,
-                )
-              }
-              type="button"
-            >
-              {tutorialStep >= tutorialSteps.length - 1 ? 'Done' : 'Next'}
-              {tutorialStep < tutorialSteps.length - 1 && (
-                <ChevronRight aria-hidden="true" size={17} />
-              )}
-            </button>
-            <button onClick={() => setTutorialStep(null)} type="button">
-              <X aria-hidden="true" size={17} />
-              Close
-            </button>
-          </div>
-        </section>
+              <path
+                d={`M ${tutorialPosition.cardLeft + 28} ${tutorialPosition.cardTop + 34} Q ${
+                  (tutorialPosition.cardLeft + tutorialPosition.arrowLeft) / 2
+                } ${tutorialPosition.cardTop - 8} ${tutorialPosition.arrowLeft} ${tutorialPosition.arrowTop}`}
+              />
+              <circle cx={tutorialPosition.arrowLeft} cy={tutorialPosition.arrowTop} r="5" />
+            </svg>
+          )}
+          <section
+            className="tutorial-card"
+            style={
+              tutorialPosition
+                ? {
+                    left: tutorialPosition.cardLeft,
+                    top: tutorialPosition.cardTop,
+                  }
+                : undefined
+            }
+            aria-live="polite"
+          >
+            <div>
+              <span>
+                Step {tutorialStep + 1} of {tutorialSteps.length}
+              </span>
+              <h2>{tutorialSteps[tutorialStep].title}</h2>
+              <p>{tutorialSteps[tutorialStep].body}</p>
+            </div>
+            <div className="tutorial-progress" aria-hidden="true">
+              {tutorialSteps.map((step, index) => (
+                <i className={index === tutorialStep ? 'active' : ''} key={step.target} />
+              ))}
+            </div>
+            <div className="reader-actions">
+              <button
+                disabled={tutorialStep <= 0}
+                onClick={() =>
+                  setTutorialStep((currentStep) => Math.max(0, (currentStep ?? 0) - 1))
+                }
+                type="button"
+              >
+                <ChevronLeft aria-hidden="true" size={17} />
+                Back
+              </button>
+              <button
+                onClick={() =>
+                  setTutorialStep((currentStep) =>
+                    currentStep === null || currentStep >= tutorialSteps.length - 1
+                      ? null
+                      : currentStep + 1,
+                  )
+                }
+                type="button"
+              >
+                {tutorialStep >= tutorialSteps.length - 1 ? 'Done' : 'Next'}
+                {tutorialStep < tutorialSteps.length - 1 && (
+                  <ChevronRight aria-hidden="true" size={17} />
+                )}
+              </button>
+              <button onClick={() => setTutorialStep(null)} type="button">
+                <X aria-hidden="true" size={17} />
+                Skip
+              </button>
+            </div>
+          </section>
+        </div>
       )}
 
       {pendingDiscardAction && (
