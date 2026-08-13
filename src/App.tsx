@@ -325,6 +325,26 @@ function getDisplayPhoto(url?: string) {
   return cleanUrl
 }
 
+function getDisplayAudio(url?: string) {
+  const cleanUrl = url?.trim()
+
+  if (!cleanUrl) {
+    return ''
+  }
+
+  if (/^(https?:|blob:|data:audio\/)/i.test(cleanUrl)) {
+    return cleanUrl
+  }
+
+  const compactBase64 = cleanUrl.replace(/\s+/g, '')
+
+  if (/^[A-Za-z0-9+/]+={0,2}$/.test(compactBase64)) {
+    return `data:audio/mpeg;base64,${compactBase64}`
+  }
+
+  return cleanUrl
+}
+
 function getPrimaryPhoto(note: Pick<Note, 'image_url' | 'photo_urls'>) {
   return getDisplayPhoto(getPhotoUrls(note)[0])
 }
@@ -1955,7 +1975,7 @@ function App() {
               <input
                 value={form.audio_url}
                 onChange={(event) => setForm({ ...form, audio_url: event.target.value })}
-                placeholder="Audio URL or base64 data URL"
+                placeholder="Audio URL, data:audio URL, or plain Base64"
               />
             </label>
           </div>
@@ -2813,7 +2833,7 @@ function App() {
                     <Mic aria-hidden="true" size={16} />
                     Voice note
                   </span>
-                  <audio controls src={selectedNote.audio_url} />
+                  <audio controls src={getDisplayAudio(selectedNote.audio_url)} />
                 </div>
               )}
               {!isNoteLocked(selectedNote) && getPhotoUrls(selectedNote).length > 1 && (
